@@ -194,9 +194,29 @@ Default value: \fB2\fR.
 .ad
 .RS 12n
 Scales \fBl2arc_headroom\fR by this percentage when L2ARC contents are being
-successfully compressed before writing. A value of 100 disables this feature.
+successfully compressed before writing. A value of \fB100\fR disables this
+feature.
 .sp
 Default value: \fB200\fR%.
+.RE
+
+.sp
+.ne 2
+.na
+\fBl2arc_trim_ahead\fR (ulong)
+.ad
+.RS 12n
+Trims ahead of the current write size (\fBl2arc_write_max\fR) on L2ARC devices
+by this percentage of write size if we have filled the device. If set to
+\fB100\fR we TRIM twice the space required to accommodate upcoming writes. A
+minimum of 64MB will be trimmed. It also enables TRIM of the whole L2ARC device
+upon creation or addition to an existing pool or if the header of the device is
+invalid upon importing a pool or onlining a cache device. A value of \fB0\fR
+disables TRIM on L2ARC altogether and is the default as it can put significant
+stress on the underlying storage devices. This will vary depending of how well
+the specific device handles these commands.
+.sp
+Default value: \fB0\fR%.
 .RE
 
 .sp
@@ -1641,6 +1661,25 @@ Default value: \fB20\fR% of \fBzfs_dirty_data_max\fR.
 .sp
 .ne 2
 .na
+\fBzfs_fallocate_reserve_percent\fR (uint)
+.ad
+.RS 12n
+Since ZFS is a copy-on-write filesystem with snapshots, blocks cannot be
+preallocated for a file in order to guarantee that later writes will not
+run out of space.  Instead, fallocate() space preallocation only checks
+that sufficient space is currently available in the pool or the user's
+project quota allocation, and then creates a sparse file of the requested
+size. The requested space is multiplied by \fBzfs_fallocate_reserve_percent\fR
+to allow additional space for indirect blocks and other internal metadata.
+Setting this value to 0 disables support for fallocate(2) and returns
+EOPNOTSUPP for fallocate() space preallocation again.
+.sp
+Default value: \fB110\fR%
+.RE
+
+.sp
+.ne 2
+.na
 \fBzfs_fletcher_4_impl\fR (string)
 .ad
 .RS 12n
@@ -1821,6 +1860,30 @@ the sum of each queue's max_active.  It must be at least the sum of each
 queue's min_active.  See the section "ZFS I/O SCHEDULER".
 .sp
 Default value: \fB1,000\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_vdev_rebuild_max_active\fR (int)
+.ad
+.RS 12n
+Maximum sequential resilver I/Os active to each device.
+See the section "ZFS I/O SCHEDULER".
+.sp
+Default value: \fB3\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_vdev_rebuild_min_active\fR (int)
+.ad
+.RS 12n
+Minimum sequential resilver I/Os active to each device.
+See the section "ZFS I/O SCHEDULER".
+.sp
+Default value: \fB1\fR.
 .RE
 
 .sp
@@ -2102,7 +2165,7 @@ Default value: \fB1,000\fR.
 \fBzfs_obsolete_min_time_ms\fR (int)
 .ad
 .RS 12n
-Simlar to \fBzfs_free_min_time_ms\fR but for cleanup of old indirection records
+Similar to \fBzfs_free_min_time_ms\fR but for cleanup of old indirection records
 for removed vdevs.
 .sp
 Default value: \fB500\fR.
@@ -2666,6 +2729,18 @@ Default value: \fB0\fR (no data is kept).
 Include cache hits in read history
 .sp
 Use \fB1\fR for yes and \fB0\fR for no (default).
+.RE
+
+.sp
+.ne 2
+.na
+\fBzfs_rebuild_max_segment\fR (ulong)
+.ad
+.RS 12n
+Maximum read segment size to issue when sequentially resilvering a
+top-level vdev.
+.sp
+Default value: \fB1,048,576\fR.
 .RE
 
 .sp

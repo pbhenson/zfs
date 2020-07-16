@@ -273,7 +273,7 @@ typedef struct dsl_dataset {
 static inline dsl_dataset_phys_t *
 dsl_dataset_phys(dsl_dataset_t *ds)
 {
-	return (ds->ds_dbuf->db_data);
+	return ((dsl_dataset_phys_t *)ds->ds_dbuf->db_data);
 }
 
 typedef struct dsl_dataset_promote_arg {
@@ -284,6 +284,7 @@ typedef struct dsl_dataset_promote_arg {
 	uint64_t used, comp, uncomp, unique, cloneusedsnap, originusedsnap;
 	nvlist_t *err_ds;
 	cred_t *cr;
+	proc_t *proc;
 } dsl_dataset_promote_arg_t;
 
 typedef struct dsl_dataset_rollback_arg {
@@ -298,6 +299,7 @@ typedef struct dsl_dataset_snapshot_arg {
 	nvlist_t *ddsa_props;
 	nvlist_t *ddsa_errors;
 	cred_t *ddsa_cr;
+	proc_t *ddsa_proc;
 } dsl_dataset_snapshot_arg_t;
 
 /*
@@ -417,10 +419,10 @@ void dsl_dataset_space(dsl_dataset_t *ds,
     uint64_t *refdbytesp, uint64_t *availbytesp,
     uint64_t *usedobjsp, uint64_t *availobjsp);
 uint64_t dsl_dataset_fsid_guid(dsl_dataset_t *ds);
-int dsl_dataset_space_written(dsl_dataset_t *oldsnap, dsl_dataset_t *new,
+int dsl_dataset_space_written(dsl_dataset_t *oldsnap, dsl_dataset_t *newds,
     uint64_t *usedp, uint64_t *compp, uint64_t *uncompp);
 int dsl_dataset_space_written_bookmark(struct zfs_bookmark_phys *bmp,
-    dsl_dataset_t *new, uint64_t *usedp, uint64_t *compp, uint64_t *uncompp);
+    dsl_dataset_t *newds, uint64_t *usedp, uint64_t *compp, uint64_t *uncompp);
 int dsl_dataset_space_wouldfree(dsl_dataset_t *firstsnap, dsl_dataset_t *last,
     uint64_t *usedp, uint64_t *compp, uint64_t *uncompp);
 
@@ -445,7 +447,7 @@ int dsl_dataset_clone_swap_check_impl(dsl_dataset_t *clone,
 void dsl_dataset_clone_swap_sync_impl(dsl_dataset_t *clone,
     dsl_dataset_t *origin_head, dmu_tx_t *tx);
 int dsl_dataset_snapshot_check_impl(dsl_dataset_t *ds, const char *snapname,
-    dmu_tx_t *tx, boolean_t recv, uint64_t cnt, cred_t *cr);
+    dmu_tx_t *tx, boolean_t recv, uint64_t cnt, cred_t *cr, proc_t *proc);
 void dsl_dataset_snapshot_sync_impl(dsl_dataset_t *ds, const char *snapname,
     dmu_tx_t *tx);
 

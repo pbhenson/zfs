@@ -1,11 +1,11 @@
 pkgdatadir = $(datadir)/@PACKAGE@
 
 dist_pkgdata_SCRIPTS = \
-	$(top_srcdir)/scripts/zimport.sh \
-	$(top_srcdir)/scripts/zfs.sh \
-	$(top_srcdir)/scripts/zfs-tests.sh \
-	$(top_srcdir)/scripts/zloop.sh \
-	$(top_srcdir)/scripts/zfs-helpers.sh
+	zimport.sh \
+	zfs.sh \
+	zfs-tests.sh \
+	zloop.sh \
+	zfs-helpers.sh
 
 EXTRA_DIST = \
 	commitcheck.sh \
@@ -15,7 +15,6 @@ EXTRA_DIST = \
 	dkms.postbuild \
 	enum-extract.pl \
 	kmodtool \
-	make_gitrev.sh \
 	man-dates.sh \
 	paxcheck.sh \
 	zfs2zol-patch.sed \

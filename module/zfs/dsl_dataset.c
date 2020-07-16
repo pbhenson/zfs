@@ -906,7 +906,7 @@ void
 dsl_dataset_name(dsl_dataset_t *ds, char *name)
 {
 	if (ds == NULL) {
-		(void) strcpy(name, "mos");
+		(void) strlcpy(name, "mos", ZFS_MAX_DATASET_NAME_LEN);
 	} else {
 		dsl_dir_name(ds->ds_dir, name);
 		VERIFY0(dsl_dataset_get_snapname(ds));
@@ -1465,7 +1465,7 @@ dsl_dataset_snapshot_reserve_space(dsl_dataset_t *ds, dmu_tx_t *tx)
 
 int
 dsl_dataset_snapshot_check_impl(dsl_dataset_t *ds, const char *snapname,
-    dmu_tx_t *tx, boolean_t recv, uint64_t cnt, cred_t *cr)
+    dmu_tx_t *tx, boolean_t recv, uint64_t cnt, cred_t *cr, proc_t *proc)
 {
 	int error;
 	uint64_t value;
@@ -1510,7 +1510,7 @@ dsl_dataset_snapshot_check_impl(dsl_dataset_t *ds, const char *snapname,
 	 */
 	if (cnt != 0 && cr != NULL) {
 		error = dsl_fs_ss_limit_check(ds->ds_dir, cnt,
-		    ZFS_PROP_SNAPSHOT_LIMIT, NULL, cr);
+		    ZFS_PROP_SNAPSHOT_LIMIT, NULL, cr, proc);
 		if (error != 0)
 			return (error);
 	}
@@ -1611,7 +1611,7 @@ dsl_dataset_snapshot_check(void *arg, dmu_tx_t *tx)
 			if (error == 0) {
 				error = dsl_fs_ss_limit_check(ds->ds_dir, cnt,
 				    ZFS_PROP_SNAPSHOT_LIMIT, NULL,
-				    ddsa->ddsa_cr);
+				    ddsa->ddsa_cr, ddsa->ddsa_proc);
 				dsl_dataset_rele(ds, FTAG);
 			}
 
@@ -1649,7 +1649,7 @@ dsl_dataset_snapshot_check(void *arg, dmu_tx_t *tx)
 		if (error == 0) {
 			/* passing 0/NULL skips dsl_fs_ss_limit_check */
 			error = dsl_dataset_snapshot_check_impl(ds,
-			    atp + 1, tx, B_FALSE, 0, NULL);
+			    atp + 1, tx, B_FALSE, 0, NULL, NULL);
 			dsl_dataset_rele(ds, FTAG);
 		}
 
@@ -1927,6 +1927,7 @@ dsl_dataset_snapshot(nvlist_t *snaps, nvlist_t *props, nvlist_t *errors)
 	ddsa.ddsa_props = props;
 	ddsa.ddsa_errors = errors;
 	ddsa.ddsa_cr = CRED();
+	ddsa.ddsa_proc = curproc;
 
 	if (error == 0) {
 		error = dsl_sync_task(firstname, dsl_dataset_snapshot_check,
@@ -1974,7 +1975,7 @@ dsl_dataset_snapshot_tmp_check(void *arg, dmu_tx_t *tx)
 
 	/* NULL cred means no limit check for tmp snapshot */
 	error = dsl_dataset_snapshot_check_impl(ds, ddsta->ddsta_snapname,
-	    tx, B_FALSE, 0, NULL);
+	    tx, B_FALSE, 0, NULL, NULL);
 	if (error != 0) {
 		dsl_dataset_rele(ds, FTAG);
 		return (error);
@@ -2427,9 +2428,12 @@ get_receive_resume_stats_impl(dsl_dataset_t *ds)
 		zio_cksum_t cksum;
 		fletcher_4_native_varsize(compressed, compressed_size, &cksum);
 
-		str = kmem_alloc(compressed_size * 2 + 1, KM_SLEEP);
+		size_t alloc_size = compressed_size * 2 + 1;
+		str = kmem_alloc(alloc_size, KM_SLEEP);
 		for (int i = 0; i < compressed_size; i++) {
-			(void) sprintf(str + i * 2, "%02x", compressed[i]);
+			size_t offset = i * 2;
+			(void) snprintf(str + offset, alloc_size - offset,
+		    "%02x", compressed[i]);
 		}
 		str[compressed_size * 2] = '\0';
 		char *propval = kmem_asprintf("%u-%llx-%llx-%s",
@@ -2437,7 +2441,7 @@ get_receive_resume_stats_impl(dsl_dataset_t *ds)
 		    (longlong_t)cksum.zc_word[0],
 		    (longlong_t)packed_size, str);
 		kmem_free(packed, packed_size);
-		kmem_free(str, compressed_size * 2 + 1);
+		kmem_free(str, alloc_size);
 		kmem_free(compressed, packed_size);
 		return (propval);
 	}
@@ -3474,7 +3478,7 @@ dsl_dataset_promote_check(void *arg, dmu_tx_t *tx)
 
 	/* Check that there is enough space and limit headroom here */
 	err = dsl_dir_transfer_possible(origin_ds->ds_dir, hds->ds_dir,
-	    0, ss_mv_cnt, ddpa->used, ddpa->cr);
+	    0, ss_mv_cnt, ddpa->used, ddpa->cr, ddpa->proc);
 	if (err != 0)
 		goto out;
 
@@ -3901,6 +3905,7 @@ dsl_dataset_promote(const char *name, char *conflsnap)
 	ddpa.ddpa_clonename = name;
 	ddpa.err_ds = fnvlist_alloc();
 	ddpa.cr = CRED();
+	ddpa.proc = curproc;
 
 	error = dsl_sync_task(name, dsl_dataset_promote_check,
 	    dsl_dataset_promote_sync, &ddpa,
@@ -3911,7 +3916,8 @@ dsl_dataset_promote(const char *name, char *conflsnap)
 	 */
 	snap_pair = nvlist_next_nvpair(ddpa.err_ds, NULL);
 	if (snap_pair != NULL && conflsnap != NULL)
-		(void) strcpy(conflsnap, nvpair_name(snap_pair));
+		(void) strlcpy(conflsnap, nvpair_name(snap_pair),
+		    ZFS_MAX_DATASET_NAME_LEN);
 
 	fnvlist_free(ddpa.err_ds);
 	return (error);

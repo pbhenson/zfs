@@ -90,7 +90,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/arc_impl.h>
 #include <sys/dsl_pool.h>
 
-#include <../zfs_config.h>
 
 /* BEGIN CSTYLED */
 SYSCTL_DECL(_vfs_zfs);
@@ -124,10 +123,11 @@ SYSCTL_NODE(_vfs_zfs_vdev, OID_AUTO, cache, CTLFLAG_RW, 0, "ZFS VDEV Cache");
 SYSCTL_NODE(_vfs_zfs_vdev, OID_AUTO, mirror, CTLFLAG_RD, 0,
     "ZFS VDEV mirror");
 
+#ifdef ZFS_META_VERSION
 SYSCTL_DECL(_vfs_zfs_version);
 SYSCTL_CONST_STRING(_vfs_zfs_version, OID_AUTO, module, CTLFLAG_RD,
     (ZFS_META_VERSION "-" ZFS_META_RELEASE), "OpenZFS module version");
-
+#endif
 extern arc_state_t ARC_anon;
 extern arc_state_t ARC_mru;
 extern arc_state_t ARC_mru_ghost;
@@ -688,6 +688,21 @@ param_set_slop_shift(SYSCTL_HANDLER_ARGS)
 		return (EINVAL);
 
 	*(int *)arg1 = val;
+
+	return (0);
+}
+
+int
+param_set_multihost_interval(SYSCTL_HANDLER_ARGS)
+{
+	int err;
+
+	err = sysctl_handle_long(oidp, arg1, 0, req);
+	if (err != 0 || req->newptr == NULL)
+		return (err);
+
+	if (spa_mode_global != SPA_MODE_UNINIT)
+		mmp_signal_all_threads();
 
 	return (0);
 }

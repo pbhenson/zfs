@@ -61,7 +61,7 @@
 #include <sys/dsl_dir.h>
 
 /*
- * zfs_match_find() is used by zfs_dirent_lookup() to peform zap lookups
+ * zfs_match_find() is used by zfs_dirent_lookup() to perform zap lookups
  * of names after deciding which is the appropriate lookup interface.
  */
 static int
@@ -276,6 +276,8 @@ zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 
 	VERIFY3U(0, ==,
 	    zap_add_int(zfsvfs->z_os, zfsvfs->z_unlinkedobj, zp->z_id, tx));
+
+	dataset_kstats_update_nunlinks_kstat(&zfsvfs->z_kstat, 1);
 }
 
 /*
@@ -293,7 +295,7 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 	int		error;
 
 	/*
-	 * Interate over the contents of the unlinked set.
+	 * Iterate over the contents of the unlinked set.
 	 */
 	for (zap_cursor_init(&zc, zfsvfs->z_os, zfsvfs->z_unlinkedobj);
 	    zap_cursor_retrieve(&zc, &zap) == 0;
@@ -506,7 +508,7 @@ zfs_rmnode(znode_t *zp)
 	}
 
 	/*
-	 * FreeBSD's implemention of zfs_zget requires a vnode to back it.
+	 * FreeBSD's implementation of zfs_zget requires a vnode to back it.
 	 * This means that we could end up calling into getnewvnode while
 	 * calling zfs_rmnode as a result of a prior call to getnewvnode
 	 * trying to clear vnodes out of the cache. If this repeats we can
@@ -531,6 +533,8 @@ zfs_rmnode(znode_t *zp)
 	}
 
 	mutex_exit(&os->os_dsl_dataset->ds_dir->dd_activity_lock);
+
+	dataset_kstats_update_nunlinked_kstat(&zfsvfs->z_kstat, 1);
 
 	zfs_znode_delete(zp, tx);
 

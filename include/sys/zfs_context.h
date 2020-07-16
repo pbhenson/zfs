@@ -28,6 +28,10 @@
 #ifndef _SYS_ZFS_CONTEXT_H
 #define	_SYS_ZFS_CONTEXT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifdef __KERNEL__
 #include <sys/note.h>
 #include <sys/types.h>
@@ -311,8 +315,8 @@ extern void cv_init(kcondvar_t *cv, char *name, int type, void *arg);
 extern void cv_destroy(kcondvar_t *cv);
 extern void cv_wait(kcondvar_t *cv, kmutex_t *mp);
 extern int cv_wait_sig(kcondvar_t *cv, kmutex_t *mp);
-extern clock_t cv_timedwait(kcondvar_t *cv, kmutex_t *mp, clock_t abstime);
-extern clock_t cv_timedwait_hires(kcondvar_t *cvp, kmutex_t *mp, hrtime_t tim,
+extern int cv_timedwait(kcondvar_t *cv, kmutex_t *mp, clock_t abstime);
+extern int cv_timedwait_hires(kcondvar_t *cvp, kmutex_t *mp, hrtime_t tim,
     hrtime_t res, int flag);
 extern void cv_signal(kcondvar_t *cv);
 extern void cv_broadcast(kcondvar_t *cv);
@@ -337,7 +341,6 @@ extern void cv_broadcast(kcondvar_t *cv);
  */
 extern kstat_t *kstat_create(const char *, int,
     const char *, const char *, uchar_t, ulong_t, uchar_t);
-extern void kstat_named_init(kstat_named_t *, const char *, uchar_t);
 extern void kstat_install(kstat_t *);
 extern void kstat_delete(kstat_t *);
 extern void kstat_waitq_enter(kstat_io_t *);
@@ -355,9 +358,6 @@ extern void kstat_set_raw_ops(kstat_t *ksp,
  * procfs list manipulation
  */
 
-struct seq_file { };
-void seq_printf(struct seq_file *m, const char *fmt, ...);
-
 typedef struct procfs_list {
 	void		*pl_private;
 	kmutex_t	pl_lock;
@@ -365,6 +365,10 @@ typedef struct procfs_list {
 	uint64_t	pl_next_id;
 	size_t		pl_node_offset;
 } procfs_list_t;
+
+#ifndef __cplusplus
+struct seq_file { };
+void seq_printf(struct seq_file *m, const char *fmt, ...);
 
 typedef struct procfs_list_node {
 	list_node_t	pln_link;
@@ -382,6 +386,7 @@ void procfs_list_install(const char *module,
 void procfs_list_uninstall(procfs_list_t *procfs_list);
 void procfs_list_destroy(procfs_list_t *procfs_list);
 void procfs_list_add(procfs_list_t *procfs_list, void *p);
+#endif
 
 /*
  * Kernel memory
@@ -408,11 +413,8 @@ void procfs_list_add(procfs_list_t *procfs_list, void *p);
 #define	kmem_debugging()	0
 #define	kmem_cache_reap_now(_c)	umem_cache_reap_now(_c);
 #define	kmem_cache_set_move(_c, _cb)	/* nothing */
-#define	vmem_qcache_reap(_v)		/* nothing */
 #define	POINTER_INVALIDATE(_pp)		/* nothing */
 #define	POINTER_IS_VALID(_p)	0
-
-extern vmem_t *zio_arena;
 
 typedef umem_cache_t kmem_cache_t;
 
@@ -707,6 +709,7 @@ extern int zfs_secpolicy_rename_perms(const char *from, const char *to,
     cred_t *cr);
 extern int zfs_secpolicy_destroy_perms(const char *name, cred_t *cr);
 extern int secpolicy_zfs(const cred_t *cr);
+extern int secpolicy_zfs_proc(const cred_t *cr, proc_t *proc);
 extern zoneid_t getzoneid(void);
 
 /* SID stuff */
@@ -742,4 +745,9 @@ extern int kmem_cache_reap_active(void);
 #define	____cacheline_aligned
 
 #endif /* _KERNEL */
+
+#ifdef __cplusplus
+};
+#endif
+
 #endif	/* _SYS_ZFS_CONTEXT_H */

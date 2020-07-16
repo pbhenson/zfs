@@ -385,7 +385,8 @@ page_busy(vnode_t *vp, int64_t start, int64_t off, int64_t nbytes)
 	 * aligned boundaries, if the range is not aligned.  As a result a
 	 * DEV_BSIZE subrange with partially dirty data may get marked as clean.
 	 * It may happen that all DEV_BSIZE subranges are marked clean and thus
-	 * the whole page would be considred clean despite have some dirty data.
+	 * the whole page would be considered clean despite have some
+	 * dirty data.
 	 * For this reason we should shrink the range to DEV_BSIZE aligned
 	 * boundaries before calling vm_page_clear_dirty.
 	 */
@@ -736,12 +737,19 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr)
 {
 	znode_t		*zp = VTOZ(vp);
 	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
-	ssize_t		n, nbytes;
+	ssize_t		n, nbytes, start_resid;
 	int		error = 0;
+	int64_t		nread;
 	zfs_locked_range_t		*lr;
 
 	ZFS_ENTER(zfsvfs);
 	ZFS_VERIFY_ZP(zp);
+
+	/* We don't copy out anything useful for directories. */
+	if (vp->v_type == VDIR) {
+		ZFS_EXIT(zfsvfs);
+		return (SET_ERROR(EISDIR));
+	}
 
 	if (zp->z_pflags & ZFS_AV_QUARANTINED) {
 		ZFS_EXIT(zfsvfs);
@@ -788,6 +796,7 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr)
 
 	ASSERT(uio->uio_loffset < zp->z_size);
 	n = MIN(uio->uio_resid, zp->z_size - uio->uio_loffset);
+	start_resid = n;
 
 	while (n > 0) {
 		nbytes = MIN(n, zfs_read_chunk_size -
@@ -810,6 +819,10 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr)
 
 		n -= nbytes;
 	}
+
+	nread = start_resid - n;
+	dataset_kstats_update_read_kstats(&zfsvfs->z_kstat, nread);
+
 out:
 	zfs_rangelock_exit(lr);
 
@@ -866,6 +879,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr)
 	sa_bulk_attr_t	bulk[4];
 	uint64_t	mtime[2], ctime[2];
 	uint64_t	uid, gid, projid;
+	int64_t		nwritten;
 
 	/*
 	 * Fasttrack empty write
@@ -1126,7 +1140,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr)
 
 		/*
 		 * Clear Set-UID/Set-GID bits on successful write if not
-		 * privileged and at least one of the excute bits is set.
+		 * privileged and at least one of the execute bits is set.
 		 *
 		 * It would be nice to to this after all writes have
 		 * been done, but that would still expose the ISUID/ISGID
@@ -1208,6 +1222,9 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr)
 	    zfsvfs->z_os->os_sync == ZFS_SYNC_ALWAYS)
 		zil_commit(zilog, zp->z_id);
 
+	nwritten = start_resid - uio->uio_resid;
+	dataset_kstats_update_write_kstats(&zfsvfs->z_kstat, nwritten);
+
 	ZFS_EXIT(zfsvfs);
 	return (0);
 }
@@ -1234,7 +1251,7 @@ zfs_write_simple(znode_t *zp, const void *data, size_t len,
 	return (error);
 }
 
-void
+static void
 zfs_get_done(zgd_t *zgd, int error)
 {
 	znode_t *zp = zgd->zgd_private;
@@ -2035,7 +2052,7 @@ out:
 }
 
 
-int
+static int
 zfs_lookup_internal(znode_t *dzp, char *name, vnode_t **vpp,
     struct componentname *cnp, int nameiop)
 {
@@ -4588,7 +4605,7 @@ zfs_space(znode_t *zp, int cmd, flock64_t *bfp, int flag,
 }
 
 /*ARGSUSED*/
-void
+static void
 zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 {
 	znode_t	*zp = VTOZ(vp);
@@ -4792,9 +4809,20 @@ zfs_getpages(struct vnode *vp, vm_page_t *ma, int count, int *rbehind,
 	 */
 	for (;;) {
 		blksz = zp->z_blksz;
-		lr = zfs_rangelock_enter(&zp->z_rangelock,
+		lr = zfs_rangelock_tryenter(&zp->z_rangelock,
 		    rounddown(start, blksz),
 		    roundup(end, blksz) - rounddown(start, blksz), RL_READER);
+		if (lr == NULL) {
+			if (rahead != NULL) {
+				*rahead = 0;
+				rahead = NULL;
+			}
+			if (rbehind != NULL) {
+				*rbehind = 0;
+				rbehind = NULL;
+			}
+			break;
+		}
 		if (blksz == zp->z_blksz)
 			break;
 		zfs_rangelock_exit(lr);
@@ -5026,7 +5054,7 @@ struct vop_putpages_args {
 };
 #endif
 
-int
+static int
 zfs_freebsd_putpages(struct vop_putpages_args *ap)
 {
 
@@ -5732,10 +5760,13 @@ zfs_freebsd_need_inactive(struct vop_need_inactive_args *ap)
 	vnode_t *vp = ap->a_vp;
 	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	bool need;
+	int need;
+
+	if (vn_need_pageq_flush(vp))
+		return (1);
 
 	if (!rw_tryenter(&zfsvfs->z_teardown_inactive_lock, RW_READER))
-		return (true);
+		return (1);
 	need = (zp->z_sa_hdl == NULL || zp->z_unlinked || zp->z_atime_dirty);
 	rw_exit(&zfsvfs->z_teardown_inactive_lock);
 
@@ -5941,7 +5972,7 @@ zfs_getextattr(struct vop_getextattr_args *ap)
 	flags = FREAD;
 	NDINIT_ATVP(&nd, LOOKUP, NOFOLLOW, UIO_SYSSPACE, attrname,
 	    xvp, td);
-	error = vn_open_cred(&nd, &flags, VN_OPEN_INVFS, 0, ap->a_cred, NULL);
+	error = vn_open_cred(&nd, &flags, 0, VN_OPEN_INVFS, ap->a_cred, NULL);
 	vp = nd.ni_vp;
 	NDFREE(&nd, NDF_ONLY_PNBUF);
 	if (error != 0) {
@@ -5977,7 +6008,7 @@ struct vop_deleteextattr {
 /*
  * Vnode operation to remove a named attribute.
  */
-int
+static int
 zfs_deleteextattr(struct vop_deleteextattr_args *ap)
 {
 	zfsvfs_t *zfsvfs = VTOZ(ap->a_vp)->z_zfsvfs;
@@ -6254,7 +6285,7 @@ struct vop_getacl_args {
 };
 #endif
 
-int
+static int
 zfs_freebsd_getacl(struct vop_getacl_args *ap)
 {
 	int		error;
@@ -6285,7 +6316,7 @@ struct vop_setacl_args {
 };
 #endif
 
-int
+static int
 zfs_freebsd_setacl(struct vop_setacl_args *ap)
 {
 	int		error;
@@ -6338,7 +6369,7 @@ struct vop_aclcheck_args {
 };
 #endif
 
-int
+static int
 zfs_freebsd_aclcheck(struct vop_aclcheck_args *ap)
 {
 

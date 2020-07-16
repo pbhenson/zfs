@@ -203,11 +203,13 @@ zio_init(void)
 
 		if (align != 0) {
 			char name[36];
-			(void) sprintf(name, "zio_buf_%lu", (ulong_t)size);
+			(void) snprintf(name, sizeof (name), "zio_buf_%lu",
+			    (ulong_t)size);
 			zio_buf_cache[c] = kmem_cache_create(name, size,
 			    align, NULL, NULL, NULL, NULL, NULL, cflags);
 
-			(void) sprintf(name, "zio_data_buf_%lu", (ulong_t)size);
+			(void) snprintf(name, sizeof (name), "zio_data_buf_%lu",
+			    (ulong_t)size);
 			zio_data_buf_cache[c] = kmem_cache_create(name, size,
 			    align, NULL, NULL, NULL, NULL,
 			    data_alloc_arena, data_cflags);
@@ -2081,7 +2083,7 @@ zio_execute(zio_t *zio)
  * enough to allow zio_execute() to be called recursively.  A minimum
  * stack size of 16K is required to avoid needing to re-dispatch the zio.
  */
-boolean_t
+static boolean_t
 zio_execute_stack_check(zio_t *zio)
 {
 #if !defined(HAVE_LARGE_STACKS)

@@ -222,9 +222,6 @@
 kmutex_t zfsdev_state_lock;
 zfsdev_state_t *zfsdev_state_list;
 
-extern void zfs_init(void);
-extern void zfs_fini(void);
-
 /*
  * Limit maximum nvlist size.  We don't want users passing in insane values
  * for zc->zc_nvlist_src_size, since we will need to allocate that much memory.
@@ -735,13 +732,13 @@ zfs_secpolicy_send_new(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 	    ZFS_DELEG_PERM_SEND, cr));
 }
 
-int
+static int
 zfs_secpolicy_share(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 {
 	return (SET_ERROR(ENOTSUP));
 }
 
-int
+static int
 zfs_secpolicy_smb_acl(zfs_cmd_t *zc, nvlist_t *innvl, cred_t *cr)
 {
 	return (SET_ERROR(ENOTSUP));
@@ -1941,8 +1938,9 @@ static int
 zfs_ioc_vdev_attach(zfs_cmd_t *zc)
 {
 	spa_t *spa;
-	int replacing = zc->zc_cookie;
 	nvlist_t *config;
+	int replacing = zc->zc_cookie;
+	int rebuild = zc->zc_simple;
 	int error;
 
 	if ((error = spa_open(zc->zc_name, &spa, FTAG)) != 0)
@@ -1950,7 +1948,8 @@ zfs_ioc_vdev_attach(zfs_cmd_t *zc)
 
 	if ((error = get_nvlist(zc->zc_nvlist_conf, zc->zc_nvlist_conf_size,
 	    zc->zc_iflags, &config)) == 0) {
-		error = spa_vdev_attach(spa, zc->zc_guid, config, replacing);
+		error = spa_vdev_attach(spa, zc->zc_guid, config, replacing,
+		    rebuild);
 		nvlist_free(config);
 	}
 
@@ -2504,7 +2503,8 @@ zfs_prop_set_special(const char *dsname, zprop_source_t source,
 			zfs_cmd_t *zc;
 
 			zc = kmem_zalloc(sizeof (zfs_cmd_t), KM_SLEEP);
-			(void) strcpy(zc->zc_name, dsname);
+			(void) strlcpy(zc->zc_name, dsname,
+			    sizeof (zc->zc_name));
 			(void) zfs_ioc_userspace_upgrade(zc);
 			(void) zfs_ioc_id_quota_upgrade(zc);
 			kmem_free(zc, sizeof (zfs_cmd_t));
@@ -3508,6 +3508,58 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
 	}
 
 	error = spa_history_log(spa, message);
+	spa_close(spa, FTAG);
+	return (error);
+}
+
+/*
+ * This ioctl is used to set the bootenv configuration on the current
+ * pool. This configuration is stored in the second padding area of the label,
+ * and it is used by the GRUB bootloader used on Linux to store the contents
+ * of the grubenv file.  The file is stored as raw ASCII, and is protected by
+ * an embedded checksum.  By default, GRUB will check if the boot filesystem
+ * supports storing the environment data in a special location, and if so,
+ * will invoke filesystem specific logic to retrieve it. This can be overridden
+ * by a variable, should the user so desire.
+ */
+/* ARGSUSED */
+static const zfs_ioc_key_t zfs_keys_set_bootenv[] = {
+	{"envmap",	DATA_TYPE_STRING,	0},
+};
+
+static int
+zfs_ioc_set_bootenv(const char *name, nvlist_t *innvl, nvlist_t *outnvl)
+{
+	char *envmap;
+	int error;
+	spa_t *spa;
+
+	envmap = fnvlist_lookup_string(innvl, "envmap");
+	if ((error = spa_open(name, &spa, FTAG)) != 0)
+		return (error);
+	spa_vdev_state_enter(spa, SCL_ALL);
+	error = vdev_label_write_bootenv(spa->spa_root_vdev, envmap);
+	(void) spa_vdev_state_exit(spa, NULL, 0);
+	spa_close(spa, FTAG);
+	return (error);
+}
+
+static const zfs_ioc_key_t zfs_keys_get_bootenv[] = {
+	/* no nvl keys */
+};
+
+/* ARGSUSED */
+static int
+zfs_ioc_get_bootenv(const char *name, nvlist_t *innvl, nvlist_t *outnvl)
+{
+	spa_t *spa;
+	int error;
+
+	if ((error = spa_open(name, &spa, FTAG)) != 0)
+		return (error);
+	spa_vdev_state_enter(spa, SCL_ALL);
+	error = vdev_label_read_bootenv(spa->spa_root_vdev, outnvl);
+	(void) spa_vdev_state_exit(spa, NULL, 0);
 	spa_close(spa, FTAG);
 	return (error);
 }
@@ -5219,7 +5271,7 @@ zfs_ioc_recv_new(const char *fsname, nvlist_t *innvl, nvlist_t *outnvl)
 	    strchr(snapname, '%'))
 		return (SET_ERROR(EINVAL));
 
-	(void) strcpy(tofs, snapname);
+	(void) strlcpy(tofs, snapname, sizeof (tofs));
 	tosnap = strchr(tofs, '@');
 	*tosnap++ = '\0';
 
@@ -6368,7 +6420,7 @@ zfs_ioc_send_new(const char *snapname, nvlist_t *innvl, nvlist_t *outnvl)
 }
 
 /* ARGSUSED */
-int
+static int
 send_space_sum(objset_t *os, void *buf, int len, void *arg)
 {
 	uint64_t *size = arg;
@@ -6823,7 +6875,7 @@ zfs_ioctl_register_dataset_modify(zfs_ioc_t ioc, zfs_ioc_legacy_func_t *func,
 	    DATASET_NAME, B_TRUE, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY);
 }
 
-void
+static void
 zfs_ioctl_init(void)
 {
 	zfs_ioctl_register("snapshot", ZFS_IOC_SNAPSHOT,
@@ -6980,6 +7032,16 @@ zfs_ioctl_init(void)
 	    zfs_ioc_wait_fs, zfs_secpolicy_none, DATASET_NAME,
 	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE, B_FALSE,
 	    zfs_keys_fs_wait, ARRAY_SIZE(zfs_keys_fs_wait));
+
+	zfs_ioctl_register("set_bootenv", ZFS_IOC_SET_BOOTENV,
+	    zfs_ioc_set_bootenv, zfs_secpolicy_config, POOL_NAME,
+	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE, B_TRUE,
+	    zfs_keys_set_bootenv, ARRAY_SIZE(zfs_keys_set_bootenv));
+
+	zfs_ioctl_register("get_bootenv", ZFS_IOC_GET_BOOTENV,
+	    zfs_ioc_get_bootenv, zfs_secpolicy_none, POOL_NAME,
+	    POOL_CHECK_SUSPENDED, B_FALSE, B_TRUE,
+	    zfs_keys_get_bootenv, ARRAY_SIZE(zfs_keys_get_bootenv));
 
 	/* IOCTLS that use the legacy function signature */
 
@@ -7196,7 +7258,7 @@ zfs_check_input_nvpairs(nvlist_t *innvl, const zfs_ioc_vec_t *vec)
 	return (0);
 }
 
-int
+static int
 pool_status_check(const char *name, zfs_ioc_namecheck_t type,
     zfs_ioc_poolcheck_t check)
 {
@@ -7312,11 +7374,12 @@ zfsdev_minor_alloc(void)
 }
 
 long
-zfsdev_ioctl_common(uint_t vecnum, zfs_cmd_t *zc)
+zfsdev_ioctl_common(uint_t vecnum, zfs_cmd_t *zc, int flag)
 {
-	int error, cmd, flag = 0;
+	int error, cmd;
 	const zfs_ioc_vec_t *vec;
 	char *saved_poolname = NULL;
+	size_t saved_poolname_len = 0;
 	nvlist_t *innvl = NULL;
 	fstrans_cookie_t cookie;
 
@@ -7416,13 +7479,15 @@ zfsdev_ioctl_common(uint_t vecnum, zfs_cmd_t *zc)
 		goto out;
 
 	/* legacy ioctls can modify zc_name */
-	saved_poolname = kmem_strdup(zc->zc_name);
-	if (saved_poolname == NULL) {
-		error = SET_ERROR(ENOMEM);
-		goto out;
-	} else {
-		saved_poolname[strcspn(saved_poolname, "/@#")] = '\0';
-	}
+	/*
+	 * Can't use kmem_strdup() as we might truncate the string and
+	 * kmem_strfree() would then free with incorrect size.
+	 */
+	saved_poolname_len = strlen(zc->zc_name) + 1;
+	saved_poolname = kmem_alloc(saved_poolname_len, KM_SLEEP);
+
+	strlcpy(saved_poolname, zc->zc_name, saved_poolname_len);
+	saved_poolname[strcspn(saved_poolname, "/@#")] = '\0';
 
 	if (vec->zvec_func != NULL) {
 		nvlist_t *outnvl;
@@ -7499,11 +7564,11 @@ out:
 		char *s = tsd_get(zfs_allow_log_key);
 		if (s != NULL)
 			kmem_strfree(s);
-		(void) tsd_set(zfs_allow_log_key, saved_poolname);
-	} else {
-		if (saved_poolname != NULL)
-			kmem_strfree(saved_poolname);
+		(void) tsd_set(zfs_allow_log_key, kmem_strdup(saved_poolname));
 	}
+	if (saved_poolname != NULL)
+		kmem_free(saved_poolname, saved_poolname_len);
+
 	return (error);
 }
 

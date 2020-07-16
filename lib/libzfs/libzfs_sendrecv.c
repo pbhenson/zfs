@@ -69,9 +69,6 @@
 #include <sys/socket.h>
 #include <sys/sha2.h>
 
-/* in libzfs_dataset.c */
-extern void zfs_setprop_error(libzfs_handle_t *, zfs_prop_t, int, char *);
-
 static int zfs_receive_impl(libzfs_handle_t *, const char *, const char *,
     recvflags_t *, int, const char *, nvlist_t *, avl_tree_t *, char **,
     const char *, nvlist_t *);
@@ -863,7 +860,8 @@ int
 zfs_send_progress(zfs_handle_t *zhp, int fd, uint64_t *bytes_written,
     uint64_t *blocks_visited)
 {
-	zfs_cmd_t zc = { {0} };
+	zfs_cmd_t zc = {"\0"};
+
 	(void) strlcpy(zc.zc_name, zhp->zfs_name, sizeof (zc.zc_name));
 	zc.zc_cookie = fd;
 	if (zfs_ioctl(zhp->zfs_hdl, ZFS_IOC_SEND_PROGRESS, &zc) != 0)
@@ -2296,7 +2294,7 @@ err_out:
 	return (err);
 }
 
-zfs_handle_t *
+static zfs_handle_t *
 name_to_dir_handle(libzfs_handle_t *hdl, const char *snapname)
 {
 	char dirname[ZFS_MAX_DATASET_NAME_LEN];
@@ -2877,7 +2875,7 @@ typedef struct guid_to_name_data {
 	uint64_t num_redact_snaps;
 } guid_to_name_data_t;
 
-boolean_t
+static boolean_t
 redact_snaps_match(zfs_handle_t *zhp, guid_to_name_data_t *gtnd)
 {
 	uint64_t *bmark_snaps;
@@ -4802,6 +4800,12 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 			    ioctl_err == ECKSUM);
 			(void) zfs_error(hdl, EZFS_BADSTREAM, errbuf);
 			break;
+		case ZFS_ERR_STREAM_LARGE_BLOCK_MISMATCH:
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "incremental send stream requires -L "
+			    "(--large-block), to match previous receive."));
+			(void) zfs_error(hdl, EZFS_BADSTREAM, errbuf);
+			break;
 		case ENOTSUP:
 			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 			    "pool must be upgraded to receive this stream."));
@@ -4888,8 +4892,8 @@ zfs_receive_one(libzfs_handle_t *hdl, int infd, const char *tosnap,
 		zfs_nicebytes(bytes, buf1, sizeof (buf1));
 		zfs_nicebytes(bytes/delta, buf2, sizeof (buf1));
 
-		(void) printf("received %s stream in %lu seconds (%s/sec)\n",
-		    buf1, delta, buf2);
+		(void) printf("received %s stream in %lld seconds (%s/sec)\n",
+		    buf1, (longlong_t)delta, buf2);
 	}
 
 	err = 0;

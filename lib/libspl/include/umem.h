@@ -80,6 +80,11 @@ typedef struct umem_cache {
 	int			cache_cflags;
 } umem_cache_t;
 
+/* Prototypes for functions to provide defaults for umem envvars */
+const char *_umem_debug_init(void);
+const char *_umem_options_init(void);
+const char *_umem_logging_init(void);
+
 static inline void *
 umem_alloc(size_t size, int flags)
 {
@@ -145,7 +150,7 @@ umem_cache_create(
 {
 	umem_cache_t *cp;
 
-	cp = umem_alloc(sizeof (umem_cache_t), UMEM_DEFAULT);
+	cp = (umem_cache_t *)umem_alloc(sizeof (umem_cache_t), UMEM_DEFAULT);
 	if (cp) {
 		strlcpy(cp->cache_name, name, UMEM_CACHE_NAMELEN);
 		cp->cache_bufsize = bufsize;

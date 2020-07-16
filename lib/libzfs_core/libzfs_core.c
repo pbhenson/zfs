@@ -293,7 +293,7 @@ lzc_promote(const char *fsname, char *snapnamebuf, int snapnamelen)
 	 * The promote ioctl is still legacy, so we need to construct our
 	 * own zfs_cmd_t rather than using lzc_ioctl().
 	 */
-	zfs_cmd_t zc = { "\0" };
+	zfs_cmd_t zc = {"\0"};
 
 	ASSERT3S(g_refcount, >, 0);
 	VERIFY3S(g_fd, !=, -1);
@@ -311,8 +311,9 @@ lzc_promote(const char *fsname, char *snapnamebuf, int snapnamelen)
 int
 lzc_rename(const char *source, const char *target)
 {
-	zfs_cmd_t zc = { "\0" };
+	zfs_cmd_t zc = {"\0"};
 	int error;
+
 	ASSERT3S(g_refcount, >, 0);
 	VERIFY3S(g_fd, !=, -1);
 	(void) strlcpy(zc.zc_name, source, sizeof (zc.zc_name));
@@ -1618,4 +1619,26 @@ lzc_wait_fs(const char *fs, zfs_wait_activity_t activity, boolean_t *waited)
 	fnvlist_free(result);
 
 	return (error);
+}
+
+/*
+ * Set the bootenv contents for the given pool.
+ */
+int
+lzc_set_bootenv(const char *pool, const char *env)
+{
+	nvlist_t *args = fnvlist_alloc();
+	fnvlist_add_string(args, "envmap", env);
+	int error = lzc_ioctl(ZFS_IOC_SET_BOOTENV, pool, args, NULL);
+	fnvlist_free(args);
+	return (error);
+}
+
+/*
+ * Get the contents of the bootenv of the given pool.
+ */
+int
+lzc_get_bootenv(const char *pool, nvlist_t **outnvl)
+{
+	return (lzc_ioctl(ZFS_IOC_GET_BOOTENV, pool, NULL, outnvl));
 }

@@ -1480,7 +1480,7 @@ metaslab_largest_allocatable(metaslab_t *msp)
  * Return the maximum contiguous segment within the unflushed frees of this
  * metaslab.
  */
-uint64_t
+static uint64_t
 metaslab_largest_unflushed_free(metaslab_t *msp)
 {
 	ASSERT(MUTEX_HELD(&msp->ms_lock));
@@ -1810,7 +1810,7 @@ metaslab_ops_t *zfs_metaslab_ops = &metaslab_ndf_ops;
 /*
  * Wait for any in-progress metaslab loads to complete.
  */
-void
+static void
 metaslab_load_wait(metaslab_t *msp)
 {
 	ASSERT(MUTEX_HELD(&msp->ms_lock));
@@ -1824,7 +1824,7 @@ metaslab_load_wait(metaslab_t *msp)
 /*
  * Wait for any in-progress flushing to complete.
  */
-void
+static void
 metaslab_flush_wait(metaslab_t *msp)
 {
 	ASSERT(MUTEX_HELD(&msp->ms_lock));
@@ -2533,7 +2533,7 @@ metaslab_unload(metaslab_t *msp)
  * the vdev_ms_shift - the vdev_ashift is less than 32, we can store
  * the ranges using two uint32_ts, rather than two uint64_ts.
  */
-static range_seg_type_t
+range_seg_type_t
 metaslab_calculate_range_tree_type(vdev_t *vdev, metaslab_t *msp,
     uint64_t *start, uint64_t *shift)
 {
@@ -3107,7 +3107,7 @@ metaslab_segment_weight(metaslab_t *msp)
  * allocation based on the index encoded in its value. For space-based
  * weights we rely on the entire weight (excluding the weight-type bit).
  */
-boolean_t
+static boolean_t
 metaslab_should_allocate(metaslab_t *msp, uint64_t asize, boolean_t try_hard)
 {
 	/*
@@ -3376,7 +3376,7 @@ metaslab_passivate(metaslab_t *msp, uint64_t weight)
  * metaslab group. If we're in sync pass > 1, then we continue using this
  * metaslab so that we don't dirty more block and cause more sync passes.
  */
-void
+static void
 metaslab_segment_may_passivate(metaslab_t *msp)
 {
 	spa_t *spa = msp->ms_group->mg_vd->vdev_spa;
@@ -3547,7 +3547,7 @@ metaslab_condense(metaslab_t *msp, dmu_tx_t *tx)
 	 * 4] At this point, we would ideally like to add all segments
 	 *    in the ms_allocatable tree from the condense tree. This way
 	 *    we would write all the entries of the condense tree as the
-	 *    condensed space map, which would only contain freeed
+	 *    condensed space map, which would only contain freed
 	 *    segments with everything else assumed to be allocated.
 	 *
 	 *    Doing so can be prohibitively expensive as ms_allocatable can
@@ -4650,7 +4650,7 @@ find_valid_metaslab(metaslab_group_t *mg, uint64_t activation_weight,
 	return (msp);
 }
 
-void
+static void
 metaslab_active_mask_verify(metaslab_t *msp)
 {
 	ASSERT(MUTEX_HELD(&msp->ms_lock));
@@ -5360,7 +5360,7 @@ typedef struct remap_blkptr_cb_arg {
 	void *rbca_cb_arg;
 } remap_blkptr_cb_arg_t;
 
-void
+static void
 remap_blkptr_cb(uint64_t inner_offset, vdev_t *vd, uint64_t offset,
     uint64_t size, void *arg)
 {
